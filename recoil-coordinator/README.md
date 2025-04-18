@@ -10,3 +10,11 @@ He can handle a lot of registered Ressource Managers and coordinate them by send
 For a good communication, the coordonator use the 2PC (two-phase commit):
 - Phase 1: Prepare
 - Phase 2: Commit or Rollback
+
+### Transaction
+
+Each Transaction will be identified by a unique ID and will have a status that can be one of the following:
+- Pending: The transaction is waiting for the coordinator to start the transaction.
+- Prepared: The transaction is prepared and waiting for the coordinator to commit or rollback the transaction.
+- Committed: The transaction has been committed successfully.
+- Rolledback: The transaction has been rolledback successfully.
