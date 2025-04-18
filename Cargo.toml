@@ -4,7 +4,7 @@
 # edition = "2024"
 
 [workspace]
-members = ["recoil-client", "recoil-coordinator", "recoil-manager"]
+members = ["recoil-client", "recoil-coordinator"]
 resolver = "2"
 
 [workspace.dependencies]
