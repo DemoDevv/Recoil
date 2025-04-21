@@ -2,6 +2,12 @@
 
 Recoil will be a Seata-like build with rust, providing a robust and scalable solution for distributed transactions.
 
+## Architecture
+
+the architecture is composed of two parts:
+- Coordinator
+- Client-lib
+
 Stack technique:
 
 Coordinator -	actix-web, tonic (gRPC), tokio, sled ou postgres
