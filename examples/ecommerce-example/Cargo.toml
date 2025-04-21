@@ -1,0 +1,6 @@
+[workspace]
+resolver = "2"
+members = ["orders-service", "products-service", "users-service"]
+
+[workspace.dependencies]
+tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }

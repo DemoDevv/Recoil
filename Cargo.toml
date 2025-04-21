@@ -5,6 +5,7 @@
 
 [workspace]
 members = ["recoil-client", "recoil-coordinator"]
+exclude = ["examples/ecommerce-example"]
 resolver = "2"
 
 [workspace.dependencies]
