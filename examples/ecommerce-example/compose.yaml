@@ -1,0 +1,55 @@
+services:
+  users-db:
+    image: postgres:15
+    container_name: users-db
+    environment:
+      POSTGRES_USER: users_service
+      POSTGRES_PASSWORD: users_password
+      POSTGRES_DB: users
+    ports:
+      - "5432:5432"
+    volumes:
+      - users-db-data:/var/lib/postgresql/data
+    networks:
+      - users-net
+
+  products-db:
+    image: postgres:15
+    container_name: products-db
+    environment:
+      POSTGRES_USER: products_service
+      POSTGRES_PASSWORD: products_password
+      POSTGRES_DB: products
+    ports:
+      - "5433:5432"
+    volumes:
+      - products-db-data:/var/lib/postgresql/data
+    networks:
+      - products-net
+
+  orders-db:
+    image: postgres:15
+    container_name: orders-db
+    environment:
+      POSTGRES_USER: orders_service
+      POSTGRES_PASSWORD: orders_password
+      POSTGRES_DB: orders
+    ports:
+      - "5434:5432"
+    volumes:
+      - orders-db-data:/var/lib/postgresql/data
+    networks:
+      - orders-net
+
+networks:
+  users-net:
+    driver: bridge
+  products-net:
+    driver: bridge
+  orders-net:
+    driver: bridge
+
+volumes:
+  users-db-data:
+  products-db-data:
+  orders-db-data:
