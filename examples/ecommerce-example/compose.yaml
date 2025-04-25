@@ -3,25 +3,25 @@ services:
     image: postgres:15
     container_name: users-db
     environment:
-      POSTGRES_USER: users_service
-      POSTGRES_PASSWORD: users_password
+      POSTGRES_USER: Uusers
+      POSTGRES_PASSWORD: Pusers
       POSTGRES_DB: users
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - users-db-data:/var/lib/postgresql/data
     networks:
-      - users-net
+      - products-net
 
   products-db:
     image: postgres:15
     container_name: products-db
     environment:
-      POSTGRES_USER: products_service
-      POSTGRES_PASSWORD: products_password
+      POSTGRES_USER: Uproducts
+      POSTGRES_PASSWORD: Pproducts
       POSTGRES_DB: products
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - products-db-data:/var/lib/postgresql/data
     networks:
@@ -31,11 +31,11 @@ services:
     image: postgres:15
     container_name: orders-db
     environment:
-      POSTGRES_USER: orders_service
-      POSTGRES_PASSWORD: orders_password
+      POSTGRES_USER: Uorders
+      POSTGRES_PASSWORD: Porders
       POSTGRES_DB: orders
     ports:
-      - "5434:5432"
+      - "5435:5432"
     volumes:
       - orders-db-data:/var/lib/postgresql/data
     networks:
