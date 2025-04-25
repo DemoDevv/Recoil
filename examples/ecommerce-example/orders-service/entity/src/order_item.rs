@@ -2,24 +2,29 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "order")]
+#[sea_orm(table_name = "order_item")]
 pub struct Model {
     #[sea_orm(primary_key)]
+    #[serde(skip_deserializing)]
     pub id: i32,
-    pub user_id: i32,
-    pub created_at: DateTime,
-    pub updated_at: DateTime,
+    pub order_id: i32,
+    pub product_id: i32,
+    pub quantity: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::order_item::Entity")]
-    OrderItem,
+    #[sea_orm(
+        belongs_to = "super::order::Entity",
+        from = "Column::OrderId",
+        to = "super::order::Column::Id"
+    )]
+    Order,
 }
 
-impl Related<super::order_item::Entity> for Entity {
+impl Related<super::order::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::OrderItem.def()
+        Relation::Order.def()
     }
 }
 
