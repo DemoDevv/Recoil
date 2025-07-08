@@ -13,8 +13,18 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(pk_auto(Order::Id))
                     .col(integer(Order::UserId))
-                    .col(timestamp(Order::CreatedAt))
-                    .col(timestamp(Order::UpdatedAt))
+                    .col(
+                        ColumnDef::new(Order::CreatedAt)
+                            .timestamp()
+                            .default(Expr::current_timestamp())
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Order::UpdatedAt)
+                            .timestamp()
+                            .default(Expr::current_timestamp())
+                            .not_null(),
+                    )
                     .to_owned(),
             )
             .await?;
