@@ -48,12 +48,13 @@ impl Coordinator {
     /// Use parallelism to prepare clients
     /// If any client fails to prepare, abort the transaction
     async fn prepare_clients<T: TxParticipant>(&self, tx: &mut Transaction<T>) {
+        // cheap copy of clients because we use Arc
         let clients = tx.clients.clone();
 
         let mut futures = clients
             .iter()
             .map(|c| c.prepare())
-            .collect::<FuturesUnordered<_>>();
+            .collect::<FuturesUnordered<_>>(); // doesn't have a limit
 
         while let Some(success) = futures.next().await {
             if !success {
@@ -69,12 +70,13 @@ impl Coordinator {
     /// Use parallelism to commit clients
     /// If any client fails to commit, abort the transaction
     async fn commit_clients<T: TxParticipant>(&self, tx: &mut Transaction<T>) {
+        // cheap copy of clients because we use Arc
         let clients = tx.clients.clone();
 
         let mut futures = clients
             .iter()
             .map(|c| c.commit())
-            .collect::<FuturesUnordered<_>>();
+            .collect::<FuturesUnordered<_>>(); // doesn't have a limit
 
         while let Some(success) = futures.next().await {
             if !success {
@@ -108,6 +110,10 @@ impl<T: TxParticipant> Transaction<T> {
             state: TxState::Created,
             clients,
         }
+    }
+
+    fn is_aborted(&self) -> bool {
+        self.state == TxState::Aborted
     }
 
     fn abort(&mut self) {
