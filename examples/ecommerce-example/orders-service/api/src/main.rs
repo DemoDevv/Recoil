@@ -1,8 +1,8 @@
 use std::env;
 
 use anyhow::Result;
-use axum::{Router, http::StatusCode, routing::get};
-use sea_orm::{Database, DatabaseConnection};
+use axum::{Router, extract::State, http::StatusCode, routing::get};
+use sea_orm::{Database, DatabaseConnection, EntityTrait};
 
 use migration::{Migrator, MigratorTrait};
 
@@ -21,15 +21,14 @@ async fn main() -> Result<()> {
 
     Migrator::up(&conn, None).await.unwrap();
 
-    // build our application with a single route
     let app = Router::new()
         .route(
             "/health",
             get(|| async { (StatusCode::OK, "Orders service is up") }),
         )
+        .route("/orders", get(get_orders))
         .with_state(AppState { db_conn: conn });
 
-    // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind(server_url).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 
@@ -39,4 +38,8 @@ async fn main() -> Result<()> {
 #[derive(Clone)]
 struct AppState {
     db_conn: DatabaseConnection,
+}
+
+async fn get_orders(state: State<AppState>) -> Result<(), StatusCode> {
+    unimplemented!()
 }
