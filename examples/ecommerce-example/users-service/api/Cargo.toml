@@ -13,3 +13,4 @@ axum = { workspace = true }
 tokio = { workspace = true }
 
 migration = { path = "../migration" }
+entity = { path = "../entity" }

@@ -14,8 +14,18 @@ impl MigrationTrait for Migration {
                     .col(pk_auto(User::Id))
                     .col(string(User::Email))
                     .col(string(User::Name))
-                    .col(timestamp(User::CreatedAt))
-                    .col(timestamp(User::UpdatedAt))
+                    .col(
+                        ColumnDef::new(User::CreatedAt)
+                            .timestamp()
+                            .default(Expr::current_timestamp())
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(User::UpdatedAt)
+                            .timestamp()
+                            .default(Expr::current_timestamp())
+                            .not_null(),
+                    )
                     .to_owned(),
             )
             .await
