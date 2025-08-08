@@ -1,8 +1,8 @@
 use std::env;
 
 use anyhow::Result;
-use axum::{Router, http::StatusCode, routing::get};
-use sea_orm::{Database, DatabaseConnection};
+use axum::{Router, extract::State, http::StatusCode, routing::get};
+use sea_orm::{Database, DatabaseConnection, EntityTrait};
 
 use migration::{Migrator, MigratorTrait};
 
@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
             "/health",
             get(|| async { (StatusCode::OK, "Products service is up") }),
         )
+        .route("/products", get(get_products))
         .with_state(AppState { db_conn: conn });
 
     // run our app with hyper, listening globally on port 3000
@@ -39,4 +40,13 @@ async fn main() -> Result<()> {
 #[derive(Clone)]
 struct AppState {
     db_conn: DatabaseConnection,
+}
+
+async fn get_products(state: State<AppState>) -> (StatusCode, String) {
+    let products = entity::product::Entity::find()
+        .all(&state.db_conn)
+        .await
+        .expect("Cannot find users in db");
+
+    (StatusCode::OK, serde_json::to_string(&products).unwrap())
 }
