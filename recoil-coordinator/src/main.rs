@@ -1,11 +1,15 @@
 use std::{fmt::Debug, sync::Arc};
 
 use futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
+use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
 use crate::participant::TxParticipant;
 
+mod errors;
 mod participant;
+
+const MAX_CONCURRENT_OPS: usize = 10;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Client(u32);
@@ -40,11 +44,25 @@ impl TxParticipant for Client {
 }
 
 #[derive(Debug)]
-struct Coordinator;
+struct Coordinator {
+    semaphore: Arc<Semaphore>,
+}
 
 impl Coordinator {
     fn new() -> Self {
-        Coordinator
+        Coordinator {
+            semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_OPS)),
+        }
+    }
+
+    /// Execute an operation with a semaphore
+    async fn execute_with_semaphore<T, F, Fut>(&self, operation: F) -> T
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = T>,
+    {
+        let _permit = self.semaphore.clone().acquire_owned().await.unwrap();
+        operation().await
     }
 
     #[instrument(skip(self))]
@@ -69,7 +87,7 @@ impl Coordinator {
 
         let mut futures = clients
             .iter()
-            .map(|c| c.prepare())
+            .map(|c| self.execute_with_semaphore(move || c.prepare()))
             .collect::<FuturesUnordered<_>>(); // doesn't have a limit
 
         let mut all_success = true;
@@ -98,7 +116,7 @@ impl Coordinator {
 
         let mut futures = clients
             .iter()
-            .map(|c| c.commit())
+            .map(|c| self.execute_with_semaphore(move || c.commit()))
             .collect::<FuturesUnordered<_>>(); // doesn't have a limit
 
         let mut all_success = true;
@@ -124,7 +142,7 @@ impl Coordinator {
 
         let mut futures = clients
             .iter()
-            .map(|c| c.rollback())
+            .map(|c| self.execute_with_semaphore(move || c.rollback()))
             .collect::<FuturesUnordered<_>>(); // doesn't have a limit
 
         let mut all_success = true;
