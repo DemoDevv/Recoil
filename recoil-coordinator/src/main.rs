@@ -520,4 +520,6 @@ mod tests {
 
         assert_eq!(tx.state, TxState::Aborted);
     }
+
+    // add more tests for timeout with a custom timeout because i can't wait for the default timeout
 }
