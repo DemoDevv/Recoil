@@ -7,4 +7,5 @@ use std::fmt::Debug;
 pub trait TxParticipant: Debug + Send + Sync {
     fn prepare<'a>(&'a self) -> BoxFuture<'a, bool>;
     fn commit<'a>(&'a self) -> BoxFuture<'a, bool>;
+    fn rollback<'a>(&'a self) -> BoxFuture<'a, bool>;
 }

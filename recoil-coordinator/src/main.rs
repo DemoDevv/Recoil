@@ -28,6 +28,15 @@ impl TxParticipant for Client {
         }
         .boxed()
     }
+
+    #[instrument(skip(self))]
+    fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
+        async move {
+            info!("Rolling back client {}", self.0);
+            true
+        }
+        .boxed()
+    }
 }
 
 #[derive(Debug)]
@@ -63,14 +72,21 @@ impl Coordinator {
             .map(|c| c.prepare())
             .collect::<FuturesUnordered<_>>(); // doesn't have a limit
 
+        let mut all_success = true;
+
         while let Some(success) = futures.next().await {
             if !success {
-                tx.abort();
-                return;
+                warn!("Client failed to prepare");
+                all_success = false;
             }
         }
 
-        tx.prepare();
+        if all_success {
+            info!("All clients prepared");
+            tx.prepare();
+        } else {
+            tx.abort();
+        }
     }
 
     /// Commit the transaction
@@ -85,14 +101,45 @@ impl Coordinator {
             .map(|c| c.commit())
             .collect::<FuturesUnordered<_>>(); // doesn't have a limit
 
+        let mut all_success = true;
+
         while let Some(success) = futures.next().await {
             if !success {
-                tx.abort();
-                return;
+                warn!("Client failed to commit");
+                all_success = false;
             }
         }
 
-        tx.commit();
+        if all_success {
+            info!("All clients committed");
+            tx.commit();
+        } else {
+            tx.abort();
+        }
+    }
+
+    async fn rollback_clients<T: TxParticipant>(&self, tx: &mut Transaction<T>) {
+        // cheap copy of clients because we use Arc
+        let clients = tx.clients.clone();
+
+        let mut futures = clients
+            .iter()
+            .map(|c| c.rollback())
+            .collect::<FuturesUnordered<_>>(); // doesn't have a limit
+
+        let mut all_success = true;
+
+        while let Some(success) = futures.next().await {
+            if !success {
+                all_success = false;
+            }
+        }
+
+        if all_success {
+            info!("All rollbacks succeeded")
+        } else {
+            warn!("Some rollbacks failed")
+        }
     }
 }
 
@@ -107,6 +154,7 @@ enum TxState {
 }
 
 struct Transaction<T: TxParticipant> {
+    id: uuid::Uuid,
     state: TxState,
     clients: Vec<Arc<T>>,
 }
@@ -114,6 +162,7 @@ struct Transaction<T: TxParticipant> {
 impl<T: TxParticipant> Transaction<T> {
     fn new(clients: Vec<Arc<T>>) -> Self {
         Transaction {
+            id: uuid::Uuid::new_v4(),
             state: TxState::Created,
             clients,
         }
@@ -160,6 +209,7 @@ impl<T: TxParticipant> TransactionBuilder<T> {
     /// Build a transaction
     fn build(self) -> Transaction<T> {
         Transaction {
+            id: uuid::Uuid::new_v4(),
             state: self.state.unwrap_or(TxState::Created),
             clients: self.clients,
         }
@@ -256,6 +306,10 @@ mod tests {
             fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
                 async { false }.boxed()
             }
+
+            fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { false }.boxed()
+            }
         }
 
         let client = Arc::new(FaillingClient);
@@ -282,6 +336,10 @@ mod tests {
             fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
                 async { false }.boxed()
             }
+
+            fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { false }.boxed()
+            }
         }
 
         let client = Arc::new(FaillingClient);
@@ -293,6 +351,80 @@ mod tests {
         coordinator.prepare_clients(&mut tx).await;
 
         coordinator.commit_clients(&mut tx).await;
+
+        assert_eq!(tx.state, TxState::Aborted);
+    }
+
+    #[tokio::test]
+    async fn test_state_after_successful_rollback() {
+        #[derive(Debug)]
+        struct FaillingClient;
+
+        impl TxParticipant for FaillingClient {
+            fn prepare<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { false }.boxed()
+            }
+
+            fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { true }.boxed()
+            }
+
+            fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { true }.boxed()
+            }
+        }
+
+        let client_a = Arc::new(FaillingClient);
+        let client_b = Arc::new(FaillingClient);
+
+        let coordinator = Coordinator::new();
+
+        let mut tx =
+            coordinator.start_transaction(vec![Arc::clone(&client_a), Arc::clone(&client_b)]);
+
+        coordinator.prepare_clients(&mut tx).await;
+
+        assert_eq!(tx.state, TxState::Aborted);
+
+        coordinator.rollback_clients(&mut tx).await;
+
+        assert_eq!(tx.state, TxState::Aborted);
+    }
+
+    #[tokio::test]
+    async fn test_state_after_partial_rollback_failure() {
+        #[derive(Debug)]
+        struct MockClient {
+            should_fail: bool,
+        }
+
+        impl TxParticipant for MockClient {
+            fn prepare<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { false }.boxed()
+            }
+
+            fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { true }.boxed()
+            }
+
+            fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { !self.should_fail }.boxed()
+            }
+        }
+
+        let client_a = Arc::new(MockClient { should_fail: false });
+        let client_b = Arc::new(MockClient { should_fail: true });
+
+        let coordinator = Coordinator::new();
+
+        let mut tx =
+            coordinator.start_transaction(vec![Arc::clone(&client_a), Arc::clone(&client_b)]);
+
+        coordinator.prepare_clients(&mut tx).await;
+
+        assert_eq!(tx.state, TxState::Aborted);
+
+        coordinator.rollback_clients(&mut tx).await;
 
         assert_eq!(tx.state, TxState::Aborted);
     }
