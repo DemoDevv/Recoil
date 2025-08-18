@@ -235,7 +235,8 @@ impl<T: TxParticipant> TransactionBuilder<T> {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     tracing_subscriber::fmt::init();
 
     let client_a = Arc::new(Client(1));
@@ -245,7 +246,8 @@ fn main() {
 
     let coordinator = Coordinator::new();
 
-    let _ = coordinator.start_transaction(clients);
+    let mut tx = coordinator.start_transaction(clients);
+    let _ = coordinator.prepare_clients(&mut tx).await;
 }
 
 #[cfg(test)]
