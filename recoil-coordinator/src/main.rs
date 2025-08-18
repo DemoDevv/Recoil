@@ -1,7 +1,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 use crate::participant::TxParticipant;
 
@@ -41,6 +41,13 @@ impl Coordinator {
     #[instrument(skip(self))]
     fn start_transaction<T: TxParticipant>(&self, clients: Vec<Arc<T>>) -> Transaction<T> {
         info!("Starting transaction");
+        if clients.is_empty() {
+            warn!("No clients provided in transaction");
+            return TransactionBuilder::new(clients)
+                .state(TxState::Aborted)
+                .build();
+        }
+
         Transaction::new(clients)
     }
 
@@ -129,6 +136,36 @@ impl<T: TxParticipant> Transaction<T> {
     }
 }
 
+/// Transaction builder
+/// used to build a transaction
+struct TransactionBuilder<T: TxParticipant> {
+    state: Option<TxState>,
+    clients: Vec<Arc<T>>,
+}
+
+impl<T: TxParticipant> TransactionBuilder<T> {
+    fn new(clients: Vec<Arc<T>>) -> Self {
+        TransactionBuilder {
+            state: None,
+            clients,
+        }
+    }
+
+    /// Set the state of the transaction
+    fn state(mut self, state: TxState) -> Self {
+        self.state = Some(state);
+        self
+    }
+
+    /// Build a transaction
+    fn build(self) -> Transaction<T> {
+        Transaction {
+            state: self.state.unwrap_or(TxState::Created),
+            clients: self.clients,
+        }
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt::init();
 
@@ -159,6 +196,17 @@ mod tests {
 
         assert_eq!(tx.state, TxState::Created);
         assert_eq!(tx.clients, clients);
+    }
+
+    #[test]
+    fn test_start_transaction_without_participants() {
+        let clients: Vec<Arc<Client>> = vec![];
+        let coordinator = Coordinator::new();
+
+        let tx = coordinator.start_transaction(clients.clone());
+
+        assert!(clients.is_empty());
+        assert_eq!(tx.state, TxState::Aborted)
     }
 
     #[tokio::test]
