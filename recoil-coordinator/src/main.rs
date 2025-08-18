@@ -7,6 +7,7 @@ use tracing::{info, instrument, warn};
 use crate::participant::TxParticipant;
 
 mod errors;
+mod metrics;
 mod participant;
 
 const MAX_CONCURRENT_OPS: usize = 10;
