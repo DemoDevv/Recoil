@@ -10,6 +10,7 @@ mod errors;
 mod metrics;
 mod participant;
 
+/// Defines the maximum number of concurrent operations allowed.
 const MAX_CONCURRENT_OPS: usize = 10;
 
 #[derive(Debug, PartialEq, Eq)]
