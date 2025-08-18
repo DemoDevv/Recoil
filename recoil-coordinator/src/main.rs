@@ -196,7 +196,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_failling_client() {
+    async fn test_abort_on_prepare_failure() {
+        #[derive(Debug)]
+        struct FaillingClient;
+
+        impl TxParticipant for FaillingClient {
+            fn prepare<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { false }.boxed()
+            }
+
+            fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
+                async { false }.boxed()
+            }
+        }
+
+        let client = Arc::new(FaillingClient);
+
+        let coordinator = Coordinator::new();
+
+        let mut tx = coordinator.start_transaction(vec![Arc::clone(&client)]);
+
+        coordinator.prepare_clients(&mut tx).await;
+
+        assert_eq!(tx.state, TxState::Aborted);
+    }
+
+    #[tokio::test]
+    async fn test_abort_on_commit_failure() {
         #[derive(Debug)]
         struct FaillingClient;
 
