@@ -1,5 +1,6 @@
 #[derive(Debug)]
 pub enum TxError {
+    PrepareFailed,
     CommitFailed,
     RollbackFailed,
 }
@@ -7,6 +8,7 @@ pub enum TxError {
 impl std::fmt::Display for TxError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            TxError::PrepareFailed => write!(f, "Prepare failed"),
             TxError::CommitFailed => write!(f, "Commit failed"),
             TxError::RollbackFailed => write!(f, "Rollback failed"),
         }

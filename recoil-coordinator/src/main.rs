@@ -1,10 +1,10 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, sync::Arc, time::Duration};
 
-use futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
-use tokio::sync::Semaphore;
+use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
+use tokio::{sync::Semaphore, time::error::Elapsed};
 use tracing::{info, instrument, warn};
 
-use crate::participant::TxParticipant;
+use crate::participant::{ClientResult, TxParticipant};
 
 mod errors;
 mod metrics;
@@ -18,28 +18,28 @@ struct Client(u32);
 
 impl TxParticipant for Client {
     #[instrument(skip(self))]
-    fn prepare<'a>(&'a self) -> BoxFuture<'a, bool> {
+    fn prepare<'a>(&'a self) -> ClientResult<'a> {
         async move {
             info!("Preparing client {}", self.0);
-            true
+            Ok(true)
         }
         .boxed()
     }
 
     #[instrument(skip(self))]
-    fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
+    fn commit<'a>(&'a self) -> ClientResult<'a> {
         async move {
             info!("Committing client {}", self.0);
-            true
+            Ok(true)
         }
         .boxed()
     }
 
     #[instrument(skip(self))]
-    fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
+    fn rollback<'a>(&'a self) -> ClientResult<'a> {
         async move {
             info!("Rolling back client {}", self.0);
-            true
+            Ok(true)
         }
         .boxed()
     }
@@ -55,6 +55,11 @@ impl Coordinator {
         Coordinator {
             semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_OPS)),
         }
+    }
+
+    /// Apply a default timeout to an operation
+    async fn default_timeout<F: Future>(&self, operation: F) -> Result<F::Output, Elapsed> {
+        tokio::time::timeout(Duration::from_secs(30), operation).await
     }
 
     /// Execute an operation with a semaphore
@@ -89,15 +94,23 @@ impl Coordinator {
 
         let mut futures = clients
             .iter()
-            .map(|c| self.execute_with_semaphore(move || c.prepare()))
-            .collect::<FuturesUnordered<_>>(); // doesn't have a limit
+            .map(|c| self.default_timeout(self.execute_with_semaphore(move || c.prepare())))
+            .collect::<FuturesUnordered<_>>();
 
         let mut all_success = true;
 
         while let Some(success) = futures.next().await {
-            if !success {
-                warn!("[{}] Client failed to prepare", tx.id);
-                all_success = false;
+            match success {
+                Ok(Ok(_)) => (),
+                Ok(Err(err)) => {
+                    warn!("[{}] Client failed to prepare: {}", tx.id, err);
+                    all_success = false;
+                }
+                // Timeout error
+                Err(err) => {
+                    warn!("[{}] Client failed to prepare: {}", tx.id, err);
+                    all_success = false;
+                }
             }
         }
 
@@ -118,15 +131,23 @@ impl Coordinator {
 
         let mut futures = clients
             .iter()
-            .map(|c| self.execute_with_semaphore(move || c.commit()))
-            .collect::<FuturesUnordered<_>>(); // doesn't have a limit
+            .map(|c| self.default_timeout(self.execute_with_semaphore(move || c.commit())))
+            .collect::<FuturesUnordered<_>>();
 
         let mut all_success = true;
 
         while let Some(success) = futures.next().await {
-            if !success {
-                warn!("[{}] Client failed to commit", tx.id);
-                all_success = false;
+            match success {
+                Ok(Ok(_)) => (),
+                Ok(Err(err)) => {
+                    warn!("[{}] Client failed to commit: {}", tx.id, err);
+                    all_success = false;
+                }
+                // Timeout error
+                Err(err) => {
+                    warn!("[{}] Client failed to commit: {}", tx.id, err);
+                    all_success = false;
+                }
             }
         }
 
@@ -144,14 +165,23 @@ impl Coordinator {
 
         let mut futures = clients
             .iter()
-            .map(|c| self.execute_with_semaphore(move || c.rollback()))
-            .collect::<FuturesUnordered<_>>(); // doesn't have a limit
+            .map(|c| self.default_timeout(self.execute_with_semaphore(move || c.rollback())))
+            .collect::<FuturesUnordered<_>>();
 
         let mut all_success = true;
 
         while let Some(success) = futures.next().await {
-            if !success {
-                all_success = false;
+            match success {
+                Ok(Ok(_)) => (),
+                Ok(Err(err)) => {
+                    warn!("[{}] Client failed to rollback: {}", tx.id, err);
+                    all_success = false;
+                }
+                // Timeout error
+                Err(err) => {
+                    warn!("[{}] Client failed to rollback: {}", tx.id, err);
+                    all_success = false;
+                }
             }
         }
 
@@ -253,6 +283,8 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
+    use crate::errors::TxError;
+
     use super::*;
 
     #[test]
@@ -321,16 +353,16 @@ mod tests {
         struct FaillingClient;
 
         impl TxParticipant for FaillingClient {
-            fn prepare<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { false }.boxed()
+            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+                async { Err(TxError::PrepareFailed) }.boxed()
             }
 
-            fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { false }.boxed()
+            fn commit<'a>(&'a self) -> ClientResult<'a> {
+                async { Err(TxError::CommitFailed) }.boxed()
             }
 
-            fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { false }.boxed()
+            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+                async { Err(TxError::RollbackFailed) }.boxed()
             }
         }
 
@@ -351,16 +383,16 @@ mod tests {
         struct FaillingClient;
 
         impl TxParticipant for FaillingClient {
-            fn prepare<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { false }.boxed()
+            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+                async { Ok(true) }.boxed()
             }
 
-            fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { false }.boxed()
+            fn commit<'a>(&'a self) -> ClientResult<'a> {
+                async { Err(TxError::CommitFailed) }.boxed()
             }
 
-            fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { false }.boxed()
+            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+                async { Err(TxError::RollbackFailed) }.boxed()
             }
         }
 
@@ -383,16 +415,16 @@ mod tests {
         struct FaillingClient;
 
         impl TxParticipant for FaillingClient {
-            fn prepare<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { false }.boxed()
+            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+                async { Err(TxError::PrepareFailed) }.boxed()
             }
 
-            fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { true }.boxed()
+            fn commit<'a>(&'a self) -> ClientResult<'a> {
+                async { Ok(true) }.boxed()
             }
 
-            fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { true }.boxed()
+            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+                async { Ok(true) }.boxed()
             }
         }
 
@@ -421,16 +453,20 @@ mod tests {
         }
 
         impl TxParticipant for MockClient {
-            fn prepare<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { false }.boxed()
+            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+                async { Err(TxError::PrepareFailed) }.boxed()
             }
 
-            fn commit<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { true }.boxed()
+            fn commit<'a>(&'a self) -> ClientResult<'a> {
+                async { Ok(true) }.boxed()
             }
 
-            fn rollback<'a>(&'a self) -> BoxFuture<'a, bool> {
-                async { !self.should_fail }.boxed()
+            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+                if self.should_fail {
+                    async { Err(TxError::RollbackFailed) }.boxed()
+                } else {
+                    async { Ok(true) }.boxed()
+                }
             }
         }
 
