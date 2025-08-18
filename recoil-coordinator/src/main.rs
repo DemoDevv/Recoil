@@ -486,4 +486,38 @@ mod tests {
 
         assert_eq!(tx.state, TxState::Aborted);
     }
+
+    #[tokio::test]
+    async fn test_state_after_default_timeout_on_prepare() {
+        #[derive(Debug)]
+        struct TimeoutClient;
+
+        impl TxParticipant for TimeoutClient {
+            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+                async {
+                    tokio::time::sleep(Duration::from_secs(31)).await;
+                    Ok(true)
+                }
+                .boxed()
+            }
+
+            fn commit<'a>(&'a self) -> ClientResult<'a> {
+                async { Ok(true) }.boxed()
+            }
+
+            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+                async { Ok(true) }.boxed()
+            }
+        }
+
+        let client = Arc::new(TimeoutClient);
+
+        let coordinator = Coordinator::new();
+
+        let mut tx = coordinator.start_transaction(vec![Arc::clone(&client)]);
+
+        coordinator.prepare_clients(&mut tx).await;
+
+        assert_eq!(tx.state, TxState::Aborted);
+    }
 }
