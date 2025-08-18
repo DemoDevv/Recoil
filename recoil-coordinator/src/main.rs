@@ -49,7 +49,7 @@ impl Coordinator {
 
     #[instrument(skip(self))]
     fn start_transaction<T: TxParticipant>(&self, clients: Vec<Arc<T>>) -> Transaction<T> {
-        info!("Starting transaction");
+        info!("Starting new transaction");
         if clients.is_empty() {
             warn!("No clients provided in transaction");
             return TransactionBuilder::new(clients)
@@ -76,13 +76,13 @@ impl Coordinator {
 
         while let Some(success) = futures.next().await {
             if !success {
-                warn!("Client failed to prepare");
+                warn!("[{}] Client failed to prepare", tx.id);
                 all_success = false;
             }
         }
 
         if all_success {
-            info!("All clients prepared");
+            info!("[{}] All clients prepared", tx.id);
             tx.prepare();
         } else {
             tx.abort();
@@ -105,13 +105,13 @@ impl Coordinator {
 
         while let Some(success) = futures.next().await {
             if !success {
-                warn!("Client failed to commit");
+                warn!("[{}] Client failed to commit", tx.id);
                 all_success = false;
             }
         }
 
         if all_success {
-            info!("All clients committed");
+            info!("[{}] All clients committed", tx.id);
             tx.commit();
         } else {
             tx.abort();
@@ -136,9 +136,9 @@ impl Coordinator {
         }
 
         if all_success {
-            info!("All rollbacks succeeded")
+            info!("[{}] All rollbacks succeeded", tx.id);
         } else {
-            warn!("Some rollbacks failed")
+            warn!("[{}] Some rollbacks failed", tx.id);
         }
     }
 }
