@@ -1,3 +1,4 @@
+use core::future::Future;
 use std::{fmt::Debug, sync::Arc, time::Duration};
 
 use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
