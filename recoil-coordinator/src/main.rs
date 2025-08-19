@@ -350,9 +350,9 @@ mod tests {
     #[tokio::test]
     async fn test_abort_on_prepare_failure() {
         #[derive(Debug)]
-        struct FaillingClient;
+        struct FailingClient;
 
-        impl TxParticipant for FaillingClient {
+        impl TxParticipant for FailingClient {
             fn prepare<'a>(&'a self) -> ClientResult<'a> {
                 async { Err(TxError::PrepareFailed) }.boxed()
             }
@@ -366,7 +366,7 @@ mod tests {
             }
         }
 
-        let client = Arc::new(FaillingClient);
+        let client = Arc::new(FailingClient);
 
         let coordinator = Coordinator::new();
 
@@ -380,9 +380,9 @@ mod tests {
     #[tokio::test]
     async fn test_abort_on_commit_failure() {
         #[derive(Debug)]
-        struct FaillingClient;
+        struct FailingClient;
 
-        impl TxParticipant for FaillingClient {
+        impl TxParticipant for FailingClient {
             fn prepare<'a>(&'a self) -> ClientResult<'a> {
                 async { Ok(true) }.boxed()
             }
@@ -396,7 +396,7 @@ mod tests {
             }
         }
 
-        let client = Arc::new(FaillingClient);
+        let client = Arc::new(FailingClient);
 
         let coordinator = Coordinator::new();
 
@@ -412,9 +412,9 @@ mod tests {
     #[tokio::test]
     async fn test_state_after_successful_rollback() {
         #[derive(Debug)]
-        struct FaillingClient;
+        struct FailingClient;
 
-        impl TxParticipant for FaillingClient {
+        impl TxParticipant for FailingClient {
             fn prepare<'a>(&'a self) -> ClientResult<'a> {
                 async { Err(TxError::PrepareFailed) }.boxed()
             }
@@ -428,8 +428,8 @@ mod tests {
             }
         }
 
-        let client_a = Arc::new(FaillingClient);
-        let client_b = Arc::new(FaillingClient);
+        let client_a = Arc::new(FailingClient);
+        let client_b = Arc::new(FailingClient);
 
         let coordinator = Coordinator::new();
 
