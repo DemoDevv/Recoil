@@ -9,7 +9,7 @@ pub type ClientResult<'a> = BoxFuture<'a, Result<bool, TxError>>;
 /// Can be used to participate in a transaction.
 /// Useful for mocking or testing purposes.
 pub trait TxParticipant: Debug + Send + Sync {
-    fn prepare<'a>(&'a self) -> ClientResult<'a>;
-    fn commit<'a>(&'a self) -> ClientResult<'a>;
-    fn rollback<'a>(&'a self) -> ClientResult<'a>;
+    fn prepare(&self) -> ClientResult;
+    fn commit(&self) -> ClientResult;
+    fn rollback(&self) -> ClientResult;
 }

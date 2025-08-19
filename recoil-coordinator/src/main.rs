@@ -19,7 +19,7 @@ struct Client(u32);
 
 impl TxParticipant for Client {
     #[instrument(skip(self))]
-    fn prepare<'a>(&'a self) -> ClientResult<'a> {
+    fn prepare(&self) -> ClientResult {
         async move {
             info!("Preparing client {}", self.0);
             Ok(true)
@@ -28,7 +28,7 @@ impl TxParticipant for Client {
     }
 
     #[instrument(skip(self))]
-    fn commit<'a>(&'a self) -> ClientResult<'a> {
+    fn commit(&self) -> ClientResult {
         async move {
             info!("Committing client {}", self.0);
             Ok(true)
@@ -37,7 +37,7 @@ impl TxParticipant for Client {
     }
 
     #[instrument(skip(self))]
-    fn rollback<'a>(&'a self) -> ClientResult<'a> {
+    fn rollback(&self) -> ClientResult {
         async move {
             info!("Rolling back client {}", self.0);
             Ok(true)
@@ -354,15 +354,15 @@ mod tests {
         struct FailingClient;
 
         impl TxParticipant for FailingClient {
-            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+            fn prepare(&self) -> ClientResult {
                 async { Err(TxError::PrepareFailed) }.boxed()
             }
 
-            fn commit<'a>(&'a self) -> ClientResult<'a> {
+            fn commit(&self) -> ClientResult {
                 async { Err(TxError::CommitFailed) }.boxed()
             }
 
-            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+            fn rollback(&self) -> ClientResult {
                 async { Err(TxError::RollbackFailed) }.boxed()
             }
         }
@@ -384,15 +384,15 @@ mod tests {
         struct FailingClient;
 
         impl TxParticipant for FailingClient {
-            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+            fn prepare(&self) -> ClientResult {
                 async { Ok(true) }.boxed()
             }
 
-            fn commit<'a>(&'a self) -> ClientResult<'a> {
+            fn commit(&self) -> ClientResult {
                 async { Err(TxError::CommitFailed) }.boxed()
             }
 
-            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+            fn rollback(&self) -> ClientResult {
                 async { Err(TxError::RollbackFailed) }.boxed()
             }
         }
@@ -416,15 +416,15 @@ mod tests {
         struct FailingClient;
 
         impl TxParticipant for FailingClient {
-            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+            fn prepare(&self) -> ClientResult {
                 async { Err(TxError::PrepareFailed) }.boxed()
             }
 
-            fn commit<'a>(&'a self) -> ClientResult<'a> {
+            fn commit(&self) -> ClientResult {
                 async { Ok(true) }.boxed()
             }
 
-            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+            fn rollback(&self) -> ClientResult {
                 async { Ok(true) }.boxed()
             }
         }
@@ -454,15 +454,15 @@ mod tests {
         }
 
         impl TxParticipant for MockClient {
-            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+            fn prepare(&self) -> ClientResult {
                 async { Err(TxError::PrepareFailed) }.boxed()
             }
 
-            fn commit<'a>(&'a self) -> ClientResult<'a> {
+            fn commit(&self) -> ClientResult {
                 async { Ok(true) }.boxed()
             }
 
-            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+            fn rollback(&self) -> ClientResult {
                 if self.should_fail {
                     async { Err(TxError::RollbackFailed) }.boxed()
                 } else {
@@ -494,7 +494,7 @@ mod tests {
         struct TimeoutClient;
 
         impl TxParticipant for TimeoutClient {
-            fn prepare<'a>(&'a self) -> ClientResult<'a> {
+            fn prepare(&self) -> ClientResult {
                 async {
                     tokio::time::sleep(Duration::from_secs(31)).await;
                     Ok(true)
@@ -502,11 +502,11 @@ mod tests {
                 .boxed()
             }
 
-            fn commit<'a>(&'a self) -> ClientResult<'a> {
+            fn commit(&self) -> ClientResult {
                 async { Ok(true) }.boxed()
             }
 
-            fn rollback<'a>(&'a self) -> ClientResult<'a> {
+            fn rollback(&self) -> ClientResult {
                 async { Ok(true) }.boxed()
             }
         }
