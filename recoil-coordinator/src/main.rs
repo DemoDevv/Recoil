@@ -107,9 +107,8 @@ impl Coordinator {
                     warn!("[{}] Client failed to prepare: {}", tx.id, err);
                     all_success = false;
                 }
-                // Timeout error
-                Err(err) => {
-                    warn!("[{}] Client failed to prepare: {}", tx.id, err);
+                Err(timeout_err) => {
+                    warn!("[{}] Client failed to prepare: {}", tx.id, timeout_err);
                     all_success = false;
                 }
             }
@@ -144,9 +143,8 @@ impl Coordinator {
                     warn!("[{}] Client failed to commit: {}", tx.id, err);
                     all_success = false;
                 }
-                // Timeout error
-                Err(err) => {
-                    warn!("[{}] Client failed to commit: {}", tx.id, err);
+                Err(timeout_err) => {
+                    warn!("[{}] Client failed to commit: {}", tx.id, timeout_err);
                     all_success = false;
                 }
             }
@@ -178,9 +176,8 @@ impl Coordinator {
                     warn!("[{}] Client failed to rollback: {}", tx.id, err);
                     all_success = false;
                 }
-                // Timeout error
-                Err(err) => {
-                    warn!("[{}] Client failed to rollback: {}", tx.id, err);
+                Err(timeout_err) => {
+                    warn!("[{}] Client failed to rollback: {}", tx.id, timeout_err);
                     all_success = false;
                 }
             }
