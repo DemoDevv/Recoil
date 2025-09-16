@@ -1,0 +1,16 @@
+[package]
+name = "api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dotenv = "0.15.0"
+anyhow = "1.0.98"
+serde_json = "1.0.140"
+
+sea-orm = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+
+migration = { path = "../migration" }
+entity = { path = "../entity" }
