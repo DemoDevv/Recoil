@@ -1,50 +1,23 @@
 use core::future::Future;
 use std::{fmt::Debug, sync::Arc, time::Duration};
 
-use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
+use futures::{StreamExt, stream::FuturesUnordered};
 use tokio::{sync::Semaphore, time::error::Elapsed};
 use tracing::{info, instrument, warn};
 
-use crate::participant::{ClientResult, TxParticipant};
+use recoil_client::participant::TxParticipant;
 
-mod errors;
+use crate::{
+    remote_client::RemoteClient,
+    timeout::{DEFAULT_TIMEOUT_DURATION, TimeoutDuration},
+};
+
 mod metrics;
-mod participant;
+mod remote_client;
+mod timeout;
 
 /// Defines the maximum number of concurrent operations allowed.
 const MAX_CONCURRENT_OPS: usize = 10;
-
-#[derive(Debug, PartialEq, Eq)]
-struct Client(u32);
-
-impl TxParticipant for Client {
-    #[instrument(skip(self))]
-    fn prepare(&self) -> ClientResult<'_> {
-        async move {
-            info!("Preparing client {}", self.0);
-            Ok(true)
-        }
-        .boxed()
-    }
-
-    #[instrument(skip(self))]
-    fn commit(&self) -> ClientResult<'_> {
-        async move {
-            info!("Committing client {}", self.0);
-            Ok(true)
-        }
-        .boxed()
-    }
-
-    #[instrument(skip(self))]
-    fn rollback(&self) -> ClientResult<'_> {
-        async move {
-            info!("Rolling back client {}", self.0);
-            Ok(true)
-        }
-        .boxed()
-    }
-}
 
 #[derive(Debug)]
 struct Coordinator {
@@ -58,9 +31,14 @@ impl Coordinator {
         }
     }
 
-    /// Apply a default timeout to an operation
-    async fn default_timeout<F: Future>(&self, operation: F) -> Result<F::Output, Elapsed> {
-        tokio::time::timeout(Duration::from_secs(30), operation).await
+    /// Apply a timeout to an operation
+    /// If DEFAULT_TIMEOUT_DURATION is give to the coordinator method, the default timeout will be set to 30 seconds
+    async fn timeout<F: Future>(
+        &self,
+        operation: F,
+        duration: TimeoutDuration,
+    ) -> Result<F::Output, Elapsed> {
+        tokio::time::timeout(duration.unwrap_or(Duration::from_secs(30)), operation).await
     }
 
     /// Execute an operation with a semaphore
@@ -89,13 +67,22 @@ impl Coordinator {
     /// Prepare the transaction
     /// Use parallelism to prepare clients
     /// If any client fails to prepare, abort the transaction
-    async fn prepare_clients<T: TxParticipant>(&self, tx: &mut Transaction<T>) {
+    async fn prepare_clients<T: TxParticipant>(
+        &self,
+        tx: &mut Transaction<T>,
+        timeout_duration: Option<Duration>,
+    ) {
         // cheap copy of clients because we use Arc
         let clients = tx.clients.clone();
 
         let mut futures = clients
             .iter()
-            .map(|c| self.default_timeout(self.execute_with_semaphore(move || c.prepare())))
+            .map(|c| {
+                self.timeout(
+                    self.execute_with_semaphore(move || c.prepare()),
+                    timeout_duration,
+                )
+            })
             .collect::<FuturesUnordered<_>>();
 
         let mut all_success = true;
@@ -125,13 +112,22 @@ impl Coordinator {
     /// Commit the transaction
     /// Use parallelism to commit clients
     /// If any client fails to commit, abort the transaction
-    async fn commit_clients<T: TxParticipant>(&self, tx: &mut Transaction<T>) {
+    async fn commit_clients<T: TxParticipant>(
+        &self,
+        tx: &mut Transaction<T>,
+        timeout_duration: Option<Duration>,
+    ) {
         // cheap copy of clients because we use Arc
         let clients = tx.clients.clone();
 
         let mut futures = clients
             .iter()
-            .map(|c| self.default_timeout(self.execute_with_semaphore(move || c.commit())))
+            .map(|c| {
+                self.timeout(
+                    self.execute_with_semaphore(move || c.commit()),
+                    timeout_duration,
+                )
+            })
             .collect::<FuturesUnordered<_>>();
 
         let mut all_success = true;
@@ -158,13 +154,22 @@ impl Coordinator {
         }
     }
 
-    async fn rollback_clients<T: TxParticipant>(&self, tx: &mut Transaction<T>) {
+    async fn rollback_clients<T: TxParticipant>(
+        &self,
+        tx: &mut Transaction<T>,
+        timeout_duration: Option<Duration>,
+    ) {
         // cheap copy of clients because we use Arc
         let clients = tx.clients.clone();
 
         let mut futures = clients
             .iter()
-            .map(|c| self.default_timeout(self.execute_with_semaphore(move || c.rollback())))
+            .map(|c| {
+                self.timeout(
+                    self.execute_with_semaphore(move || c.rollback()),
+                    timeout_duration,
+                )
+            })
             .collect::<FuturesUnordered<_>>();
 
         let mut all_success = true;
@@ -268,27 +273,34 @@ impl<T: TxParticipant> TransactionBuilder<T> {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let client_a = Arc::new(Client(1));
-    let client_b = Arc::new(Client(2));
+    let client_a = Arc::new(RemoteClient(1));
+    let client_b = Arc::new(RemoteClient(2));
 
     let clients = vec![Arc::clone(&client_a), Arc::clone(&client_b)];
 
     let coordinator = Coordinator::new();
 
     let mut tx = coordinator.start_transaction(clients);
-    let _ = coordinator.prepare_clients(&mut tx).await;
+    let _ = coordinator
+        .prepare_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+        .await;
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::errors::TxError;
-
     use super::*;
+
+    use futures::FutureExt;
+
+    use recoil_client::participant::ClientResult;
+    use recoil_errors::transaction::TxError;
+
+    use crate::remote_client::RemoteClient;
 
     #[test]
     fn test_start_transaction() {
-        let client_a = Arc::new(Client(1));
-        let client_b = Arc::new(Client(2));
+        let client_a = Arc::new(RemoteClient(1));
+        let client_b = Arc::new(RemoteClient(2));
 
         let clients = vec![Arc::clone(&client_a), Arc::clone(&client_b)];
 
@@ -302,7 +314,7 @@ mod tests {
 
     #[test]
     fn test_start_transaction_without_participants() {
-        let clients: Vec<Arc<Client>> = vec![];
+        let clients: Vec<Arc<RemoteClient>> = vec![];
         let coordinator = Coordinator::new();
 
         let tx = coordinator.start_transaction(clients.clone());
@@ -313,8 +325,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_prepare_clients() {
-        let client_a = Arc::new(Client(1));
-        let client_b = Arc::new(Client(2));
+        let client_a = Arc::new(RemoteClient(1));
+        let client_b = Arc::new(RemoteClient(2));
 
         let clients = vec![Arc::clone(&client_a), Arc::clone(&client_b)];
 
@@ -322,15 +334,17 @@ mod tests {
 
         let mut tx = coordinator.start_transaction(clients);
 
-        coordinator.prepare_clients(&mut tx).await;
+        coordinator
+            .prepare_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
         assert_eq!(tx.state, TxState::Prepared);
     }
 
     #[tokio::test]
     async fn test_commit_clients() {
-        let client_a = Arc::new(Client(1));
-        let client_b = Arc::new(Client(2));
+        let client_a = Arc::new(RemoteClient(1));
+        let client_b = Arc::new(RemoteClient(2));
 
         let clients = vec![Arc::clone(&client_a), Arc::clone(&client_b)];
 
@@ -338,9 +352,13 @@ mod tests {
 
         let mut tx = coordinator.start_transaction(clients);
 
-        coordinator.prepare_clients(&mut tx).await;
+        coordinator
+            .prepare_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
-        coordinator.commit_clients(&mut tx).await;
+        coordinator
+            .commit_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
         assert_eq!(tx.state, TxState::Committed);
     }
@@ -370,7 +388,9 @@ mod tests {
 
         let mut tx = coordinator.start_transaction(vec![Arc::clone(&client)]);
 
-        coordinator.prepare_clients(&mut tx).await;
+        coordinator
+            .prepare_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
         assert_eq!(tx.state, TxState::Aborted);
     }
@@ -400,9 +420,13 @@ mod tests {
 
         let mut tx = coordinator.start_transaction(vec![Arc::clone(&client)]);
 
-        coordinator.prepare_clients(&mut tx).await;
+        coordinator
+            .prepare_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
-        coordinator.commit_clients(&mut tx).await;
+        coordinator
+            .commit_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
         assert_eq!(tx.state, TxState::Aborted);
     }
@@ -434,11 +458,15 @@ mod tests {
         let mut tx =
             coordinator.start_transaction(vec![Arc::clone(&client_a), Arc::clone(&client_b)]);
 
-        coordinator.prepare_clients(&mut tx).await;
+        coordinator
+            .prepare_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
         assert_eq!(tx.state, TxState::Aborted);
 
-        coordinator.rollback_clients(&mut tx).await;
+        coordinator
+            .rollback_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
         assert_eq!(tx.state, TxState::Aborted);
     }
@@ -476,24 +504,28 @@ mod tests {
         let mut tx =
             coordinator.start_transaction(vec![Arc::clone(&client_a), Arc::clone(&client_b)]);
 
-        coordinator.prepare_clients(&mut tx).await;
+        coordinator
+            .prepare_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
         assert_eq!(tx.state, TxState::Aborted);
 
-        coordinator.rollback_clients(&mut tx).await;
+        coordinator
+            .rollback_clients(&mut tx, DEFAULT_TIMEOUT_DURATION)
+            .await;
 
         assert_eq!(tx.state, TxState::Aborted);
     }
 
     #[tokio::test]
-    async fn test_state_after_default_timeout_on_prepare() {
+    async fn test_state_after_timeout_on_prepare() {
         #[derive(Debug)]
         struct TimeoutClient;
 
         impl TxParticipant for TimeoutClient {
             fn prepare(&self) -> ClientResult<'_> {
                 async {
-                    tokio::time::sleep(Duration::from_secs(31)).await;
+                    tokio::time::sleep(Duration::from_secs(2)).await;
                     Ok(true)
                 }
                 .boxed()
@@ -514,7 +546,9 @@ mod tests {
 
         let mut tx = coordinator.start_transaction(vec![Arc::clone(&client)]);
 
-        coordinator.prepare_clients(&mut tx).await;
+        coordinator
+            .prepare_clients(&mut tx, TimeoutDuration::Some(Duration::from_secs(1)))
+            .await;
 
         assert_eq!(tx.state, TxState::Aborted);
     }
