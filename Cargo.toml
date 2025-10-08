@@ -11,3 +11,9 @@ resolver = "2"
 [workspace.dependencies]
 futures = "0.3.31"
 tokio = { version = "1.47.1", features = ["full"] }
+tonic = "*"
+prost = "0.14"
+tonic-prost = "*"
+
+[workspace.build-dependencies]
+tonic-prost-build = "*"

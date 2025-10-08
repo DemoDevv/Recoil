@@ -7,4 +7,8 @@ edition = "2024"
 futures = { workspace = true }
 tokio = { workspace = true }
 
+tonic = { workspace = true }
+prost = { workspace = true }
+tonic-prost = { workspace = true }
+
 recoil-errors = { path = "../recoil-errors" }
