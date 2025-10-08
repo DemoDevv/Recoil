@@ -16,3 +16,6 @@ tonic-prost = { workspace = true }
 
 recoil-client = { path = "../recoil-client" }
 recoil-errors = { path = "../recoil-errors" }
+
+[build-dependencies]
+tonic-prost-build = "*"
